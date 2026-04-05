@@ -1,0 +1,23 @@
+# Terra Nova — Disaster Recovery Cost Forecasting
+# Python 3.11+
+
+# Data
+pandas>=2.1.0
+numpy>=1.26.0
+pyarrow>=14.0.0          # Parquet support
+
+# HTTP / API client
+requests>=2.31.0
+
+# ML
+scikit-learn>=1.4.0
+xgboost>=2.0.0
+
+# API backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+
+# Dashboard
+streamlit>=1.32.0
+plotly>=5.19.0

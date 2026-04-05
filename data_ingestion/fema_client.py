@@ -10,7 +10,7 @@ from typing import Optional
 import requests
 import pandas as pd
 
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.fema.gov/api/open"
 
@@ -54,7 +54,7 @@ class FEMAClientError(Exception):
 class FEMAClient:
     """Paginated FEMA Open Data REST API client."""
 
-    def _init_(self, page_size=DEFAULT_PAGE_SIZE, timeout=REQUEST_TIMEOUT):
+    def __init__(self, page_size=DEFAULT_PAGE_SIZE, timeout=REQUEST_TIMEOUT):
         self.page_size = page_size
         self.timeout   = timeout
         self.session   = requests.Session()

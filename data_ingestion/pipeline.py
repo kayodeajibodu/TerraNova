@@ -12,7 +12,7 @@ import pandas as pd
 
 from .fema_client import FEMAClient
 
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 
 RAW_DATA_DIR = Path("data/raw")
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -21,7 +21,7 @@ MIN_OBLIGATED_AMOUNT = 0.01
 
 
 class IngestionPipeline:
-    def _init_(self, client=None, output_dir=RAW_DATA_DIR):
+    def __init__(self, client=None, output_dir=RAW_DATA_DIR):
         self.client     = client or FEMAClient()
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
