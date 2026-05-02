@@ -35,6 +35,7 @@ RANDOM_SEED      = 42
 EXPERIMENT_NAME  = "terra_nova_disaster_cost_forecasting"
 REGISTERED_NAME  = "terra_nova_cost_model"      # name in MLflow Model Registry
 CHAMPION_ALIAS   = "champion"                   # alias promoted on best model
+MLFLOW_TRACKING_URI = mlflow.get_tracking_uri()  # default to env var or local file store
 
 
 class ModelTrainer:
@@ -44,14 +45,14 @@ class ModelTrainer:
 
     Usage
     -----
-    trainer = ModelTrainer(tracking_uri="http://localhost:5000")
+    trainer = ModelTrainer()
     results = trainer.train(X, y)
     """
 
     def __init__(
         self,
         models_dir: Path = MODELS_DIR,
-        tracking_uri: str = "http://mlflow:5000",
+        tracking_uri: str = MLFLOW_TRACKING_URI,
         experiment_name: str = EXPERIMENT_NAME,
     ):
         self.models_dir      = models_dir
@@ -61,11 +62,34 @@ class ModelTrainer:
         self.best_model_name_: str      = ""
         self.best_pipeline_: Any        = None
         self.best_run_id_: Optional[str] = None
+        self.use_mlflow: bool            = True
+        self.client: Optional[MlflowClient] = None
 
-        # Configure MLflow
-        mlflow.set_tracking_uri(tracking_uri)
-        mlflow.set_experiment(experiment_name)
-        self.client = MlflowClient(tracking_uri=tracking_uri)
+        self._initialize_mlflow()
+
+    # ------------------------------------------------------------------
+    # MLflow initialization
+    # ------------------------------------------------------------------
+
+    def _initialize_mlflow(self) -> None:
+        """Configure MLflow and fall back to local tracking if remote is unavailable."""
+        mlflow.set_tracking_uri(self.tracking_uri)
+        try:
+            mlflow.set_experiment(self.experiment_name)
+            self.client = MlflowClient(tracking_uri=self.tracking_uri)
+        except Exception as exc:
+            logger.warning(
+                "Could not connect to MLflow tracking server at %s: %s",
+                self.tracking_uri, exc,
+            )
+            logger.warning(
+                "Falling back to local MLflow file store at ./mlruns. "
+                "Model registry operations will be disabled.",
+            )
+            self.use_mlflow = False
+            mlflow.set_tracking_uri("file:./mlruns")
+            mlflow.set_experiment(self.experiment_name)
+            self.client = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -129,8 +153,6 @@ class ModelTrainer:
             raise FileNotFoundError(
                 f"No model at {path} and MLflow registry unavailable. Run train() first."
             )
-          #  f = open(path, "rb") # just to check if file is readable
-           # f.close() # just to check if file is readable
         with open(path, "rb") as f:
             return pickle.load(f)
 
@@ -206,21 +228,35 @@ class ModelTrainer:
                 "cv_r2_std":    metrics["cv_r2_std"],
             })
 
-            # ── Log model to registry ────────────────────────────────
-            if name == "xgboost":
-                mlflow.xgboost.log_model(
-                    xgb_model=model_step,
-                    artifact_path="model",
-                    registered_model_name=REGISTERED_NAME,
-                    input_example=X_test.head(3),
-                )
+            # ── Log model to registry or local MLflow run ─────────────
+            if self.use_mlflow:
+                if name == "xgboost":
+                    mlflow.xgboost.log_model(
+                        xgb_model=model_step,
+                        artifact_path="model",
+                        registered_model_name=REGISTERED_NAME,
+                        input_example=X_test.head(3),
+                    )
+                else:
+                    mlflow.sklearn.log_model(
+                        sk_model=pipeline,
+                        artifact_path="model",
+                        registered_model_name=REGISTERED_NAME,
+                        input_example=X_test.head(3),
+                    )
             else:
-                mlflow.sklearn.log_model(
-                    sk_model=pipeline,
-                    artifact_path="model",
-                    registered_model_name=REGISTERED_NAME,
-                    input_example=X_test.head(3),
-                )
+                if name == "xgboost":
+                    mlflow.xgboost.log_model(
+                        xgb_model=model_step,
+                        artifact_path="model",
+                        input_example=X_test.head(3),
+                    )
+                else:
+                    mlflow.sklearn.log_model(
+                        sk_model=pipeline,
+                        artifact_path="model",
+                        input_example=X_test.head(3),
+                    )
 
             # ── Log feature importance artifact (tree-based models only) ──
             model_obj = pipeline.named_steps["model"]
@@ -248,6 +284,13 @@ class ModelTrainer:
         self.best_model_name_ = best_name
         best_run_id           = self.results_[best_name]["run_id"]
         self.best_run_id_     = best_run_id
+
+        if not self.use_mlflow or self.client is None:
+            logger.warning(
+                "MLflow registry unavailable; skipping champion promotion. "
+                "best model will still be saved locally.",
+            )
+            return
 
         # Find the model version that was logged in this run
         versions = self.client.search_model_versions(

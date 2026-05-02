@@ -1,0 +1,45 @@
+artifact_path: file:///C:/Users/User/Desktop/TerraNova/mlflow_artifacts/2/models/m-3b1d5d630990412396650f30575e365b/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.11.2
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.8.0
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+mlflow_version: 3.11.1
+model_id: m-3b1d5d630990412396650f30575e365b
+model_size_bytes: 7572552
+model_uuid: m-3b1d5d630990412396650f30575e365b
+prompts: null
+run_id: 95e415692a04442a8462bf2375311484
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "incident_duration_days", "required": true},
+    {"type": "long", "name": "declaration_lag_days", "required": true}, {"type": "integer",
+    "name": "declaration_year", "required": true}, {"type": "integer", "name": "declaration_month",
+    "required": true}, {"type": "long", "name": "incident_type_enc", "required": true},
+    {"type": "long", "name": "declaration_type_severity", "required": true}, {"type":
+    "long", "name": "regional_risk_score", "required": true}, {"type": "long", "name":
+    "disaster_frequency_5yr", "required": true}, {"type": "double", "name": "project_count",
+    "required": true}, {"type": "double", "name": "mean_project_amount", "required":
+    true}, {"type": "double", "name": "max_project_amount", "required": true}, {"type":
+    "double", "name": "category_diversity", "required": true}, {"type": "double",
+    "name": "has_high_cost_category", "required": true}, {"type": "double", "name":
+    "county_scope", "required": true}]'
+  outputs: '[{"type": "double", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-04-19 20:36:02.455394'

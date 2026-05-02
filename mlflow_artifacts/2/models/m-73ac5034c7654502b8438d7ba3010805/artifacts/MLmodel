@@ -1,0 +1,44 @@
+artifact_path: file:///C:/Users/User/Desktop/TerraNova/mlflow_artifacts/2/models/m-73ac5034c7654502b8438d7ba3010805/artifacts
+flavors:
+  python_function:
+    data: model.ubj
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.11.2
+  xgboost:
+    code: null
+    data: model.ubj
+    model_class: xgboost.sklearn.XGBRegressor
+    model_format: ubj
+    xgb_version: 3.2.0
+is_signature_from_type_hint: false
+mlflow_version: 3.11.1
+model_id: m-73ac5034c7654502b8438d7ba3010805
+model_size_bytes: 1890237
+model_uuid: m-73ac5034c7654502b8438d7ba3010805
+prompts: null
+run_id: efda4001078c42beaed85c1f030e414c
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "incident_duration_days", "required": true},
+    {"type": "long", "name": "declaration_lag_days", "required": true}, {"type": "integer",
+    "name": "declaration_year", "required": true}, {"type": "integer", "name": "declaration_month",
+    "required": true}, {"type": "long", "name": "incident_type_enc", "required": true},
+    {"type": "long", "name": "declaration_type_severity", "required": true}, {"type":
+    "long", "name": "regional_risk_score", "required": true}, {"type": "long", "name":
+    "disaster_frequency_5yr", "required": true}, {"type": "double", "name": "project_count",
+    "required": true}, {"type": "double", "name": "mean_project_amount", "required":
+    true}, {"type": "double", "name": "max_project_amount", "required": true}, {"type":
+    "double", "name": "category_diversity", "required": true}, {"type": "double",
+    "name": "has_high_cost_category", "required": true}, {"type": "double", "name":
+    "county_scope", "required": true}]'
+  outputs: '[{"type": "float", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-04-19 20:36:30.227465'

@@ -1,0 +1,15 @@
+feature,importance
+max_project_amount,0.39425972
+declaration_type_severity,0.2654008
+project_count,0.15033042
+mean_project_amount,0.058288824
+county_scope,0.04892995
+category_diversity,0.04181093
+incident_type_enc,0.015568782
+declaration_year,0.014180594
+incident_duration_days,0.0033381858
+declaration_lag_days,0.003260947
+has_high_cost_category,0.0015750435
+disaster_frequency_5yr,0.0011424336
+declaration_month,0.0011392176
+regional_risk_score,0.000774263

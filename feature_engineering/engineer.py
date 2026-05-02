@@ -30,14 +30,11 @@ PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 HIGH_COST_CATEGORIES = {"E", "F", "G"}   # Roads, buildings, utilities
 CATEGORY_COLUMNS = ["A", "B", "C", "D", "E", "F", "G", "Z"]
 
-# High-risk states based on historical FEMA disaster frequency
-HIGH_RISK_STATES = {
-    "TX", "FL", "CA", "LA", "AL", "MS", "OK", "KS", "MO", "TN"
-}
-MEDIUM_RISK_STATES = {
-    "NC", "SC", "GA", "AR", "NE", "SD", "ND", "WY", "CO", "NM",
-    "WA", "OR", "ID", "MT", "AZ", "NV", "UT"
-}
+# Risk tier thresholds (percentile cut-offs applied to composite risk score)
+RISK_HIGH_PERCENTILE   = 0.67   # top third   → score 3
+RISK_MEDIUM_PERCENTILE = 0.33   # middle third → score 2
+                                 # bottom third → score 1
+
 
 
 class FeatureEngineer:
@@ -63,7 +60,7 @@ class FeatureEngineer:
         declarations:       pd.DataFrame,
         public_assistance:  pd.DataFrame,
         disaster_summaries: pd.DataFrame,
-    ) -> tuple[pd.DataFrame, pd.Series]: # return type hint for (X, y)
+    ) -> tuple[pd.DataFrame, pd.Series]:
         """
         Build (X, y) ready for model training.
 
@@ -86,7 +83,8 @@ class FeatureEngineer:
         # Step 4: Encode categorical features
         master = self._encode_categoricals(master)
 
-        # Step 5: Add regional risk encoding
+       # Step 5: Compute data-driven state risk tiers, then apply to master
+        self._compute_state_risk_tiers(declarations, public_assistance)
         master = self._add_regional_risk(master)
 
         # Step 6: Add disaster frequency (rolling count per state)
@@ -249,24 +247,151 @@ class FeatureEngineer:
         return df
 
     # ------------------------------------------------------------------
-    # Step 5: Regional risk score
+    # Step 5a: Compute data-driven state risk tiers from the dataset
+    # ------------------------------------------------------------------
+
+    def _compute_state_risk_tiers(
+        self,
+        declarations: pd.DataFrame,
+        public_assistance: pd.DataFrame,
+    ) -> None:
+        """
+        Derives a composite risk score for every state in the dataset using
+        three signals — all computed from the data, not hardcoded:
+
+          1. disaster_count       — total number of declared disasters
+          2. mean_obligated_cost  — average federal obligation per disaster ($)
+          3. incident_diversity   — number of distinct incident types
+
+        Each signal is min-max normalised to [0, 1], then averaged into a
+        composite score. States are then binned into three tiers using the
+        33rd and 67th percentiles of that composite score:
+          score 3 → high risk   (top third)
+          score 2 → medium risk (middle third)
+          score 1 → low risk    (bottom third)
+
+        Results are stored in self.state_risk_map_ and self.state_risk_stats_
+        and exported as data/processed/state_risk_tiers.csv for auditability.
+        """
+        if "state" not in declarations.columns:
+            logger.warning("No state column — defaulting all risk scores to 1.")
+            self.state_risk_map_ = {}
+            return
+
+        decl = declarations.copy()
+
+        # ── Signal 1: disaster frequency per state ────────────────────
+        freq = (
+            decl.groupby("state")["disasterNumber"]
+            .nunique()
+            .rename("disaster_count")
+            .reset_index()
+        )
+
+        # ── Signal 2: mean obligated cost per state ───────────────────
+        if not public_assistance.empty and "obligatedAmount" in public_assistance.columns:
+            pa = public_assistance.copy()
+            cost_per_disaster = (
+                pa.groupby("disasterNumber")["obligatedAmount"].sum().reset_index()
+            )
+            cost_per_disaster = cost_per_disaster.merge(
+                decl[["disasterNumber", "state"]].drop_duplicates(),
+                on="disasterNumber", how="left",
+            )
+            mean_cost = (
+                cost_per_disaster.groupby("state")["obligatedAmount"]
+                .mean()
+                .rename("mean_obligated_cost")
+                .reset_index()
+            )
+        else:
+            mean_cost = freq[["state"]].copy()
+            mean_cost["mean_obligated_cost"] = 0.0
+
+        # ── Signal 3: incident type diversity per state ───────────────
+        if "incidentType" in decl.columns:
+            diversity = (
+                decl.groupby("state")["incidentType"]
+                .nunique()
+                .rename("incident_diversity")
+                .reset_index()
+            )
+        else:
+            diversity = freq[["state"]].copy()
+            diversity["incident_diversity"] = 1
+
+        # ── Merge signals ─────────────────────────────────────────────
+        stats = freq.merge(mean_cost, on="state", how="left")
+        stats = stats.merge(diversity, on="state", how="left")
+        stats = stats.fillna(0)
+
+        # ── Min-max normalise each signal to [0, 1] ───────────────────
+        for col in ["disaster_count", "mean_obligated_cost", "incident_diversity"]:
+            col_min = stats[col].min()
+            col_max = stats[col].max()
+            denom   = col_max - col_min if col_max > col_min else 1.0
+            stats[f"{col}_norm"] = (stats[col] - col_min) / denom
+
+        # ── Composite score (equal weights — adjustable) ──────────────
+        stats["composite_risk_score"] = (
+            stats["disaster_count_norm"] * 0.40
+            + stats["mean_obligated_cost_norm"] * 0.40
+            + stats["incident_diversity_norm"] * 0.20
+        )
+
+        # ── Assign tiers using dataset percentiles ────────────────────
+        p33 = stats["composite_risk_score"].quantile(RISK_MEDIUM_PERCENTILE)
+        p67 = stats["composite_risk_score"].quantile(RISK_HIGH_PERCENTILE)
+
+        def assign_tier(score: float) -> int:
+            if score >= p67:
+                return 3   # high
+            if score >= p33:
+                return 2   # medium
+            return 1        # low
+
+        stats["risk_tier"] = stats["composite_risk_score"].apply(assign_tier)
+
+        # ── Store and log ─────────────────────────────────────────────
+        self.state_risk_map_   = dict(zip(stats["state"], stats["risk_tier"]))
+        self.state_risk_stats_ = stats
+
+        tier_counts = stats["risk_tier"].value_counts().sort_index()
+        logger.info(
+            "State risk tiers computed from data: "
+            "high(3)=%d  medium(2)=%d  low(1)=%d  states",
+            tier_counts.get(3, 0),
+            tier_counts.get(2, 0),
+            tier_counts.get(1, 0),
+        )
+
+        high_states   = sorted(stats.loc[stats["risk_tier"] == 3, "state"].tolist())
+        medium_states = sorted(stats.loc[stats["risk_tier"] == 2, "state"].tolist())
+        logger.info("High-risk states:   %s", ", ".join(high_states))
+        logger.info("Medium-risk states: %s", ", ".join(medium_states))
+
+        # Export for audit / dashboard display
+        out_path = PROCESSED_DATA_DIR / "state_risk_tiers.csv"
+        stats.to_csv(out_path, index=False)
+        logger.info("State risk tiers saved → %s", out_path)
+
+    # ------------------------------------------------------------------
+    # Step 5b: Apply computed risk tiers to master DataFrame
     # ------------------------------------------------------------------
 
     def _add_regional_risk(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-
-        def risk_score(state: str) -> int:
-            s = str(state).strip().upper()
-            if s in HIGH_RISK_STATES:
-                return 3
-            if s in MEDIUM_RISK_STATES:
-                return 2
-            return 1
-
         if "state" in df.columns:
-            df["regional_risk_score"] = df["state"].apply(risk_score)
-
+            df["regional_risk_score"] = (
+                df["state"]
+                .str.strip()
+                .str.upper()
+                .map(self.state_risk_map_)
+                .fillna(1)        # unknown states default to low risk
+                .astype(int)
+            )
         return df
+
 
     # ------------------------------------------------------------------
     # Step 6: Disaster frequency (rolling count per state)
